@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData">
+    <serverData>
+      <paths name="Remote (00520573-5a64-47d6-8a67-12345dd1c112)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/tmp.jpmGaWbYR8" local="$PROJECT_DIR$" />
+            <mapping deploy="/tmp/gdb/renderers" local="$APPLICATION_HOME_DIR$/bin/gdb/renderers" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-remote" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
