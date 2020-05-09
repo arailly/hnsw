@@ -17,7 +17,7 @@ namespace hnsw {
     struct Node {
         const Data<>& data;
         vector<reference_wrapper<const Node>> neighbors;
-        Node* next_layer_node;
+        Node* lower_layer_node;
 
         explicit Node(const Data<>& data_) : data(data_) {}
     };
@@ -62,8 +62,13 @@ namespace hnsw {
         }
     };
 
+    template <typename T>
+    T& const_off(const T& ref) {
+        return const_cast<T&>(ref);
+    }
+
     struct HNSW {
-        const int m, m_max, ef_construction;
+        const int m, m_max_0, ef_construction;
         const float m_l;
         const bool extend_candidates, keep_pruned_connections;
 
@@ -74,9 +79,9 @@ namespace hnsw {
         mt19937 engine;
         uniform_real_distribution<float> unif_dist;
 
-        HNSW(int m, int m_max, int ef_construction,
+        HNSW(int m, int m_max_0, int ef_construction,
              bool extend_candidates = false, bool keep_pruned_connections = false) :
-                m(m), m_max(m_max), ef_construction(ef_construction),
+                m(m), m_max_0(m_max_0), ef_construction(ef_construction),
                 m_l(1 / log(1.0 * m)),
                 extend_candidates(extend_candidates),
                 keep_pruned_connections(keep_pruned_connections),
@@ -86,11 +91,11 @@ namespace hnsw {
             return static_cast<int>(-log(unif_dist(engine)) * m_l);
         }
 
-        RefNodes search_layer(const Node& query, const Node& start_node, int ef) {
+        RefNodes search_layer(const Data<>& query, const Node& start_node, int ef) {
             unordered_map<int, bool> visited;
             visited[start_node.data.id] = true;
 
-            const auto dist_from_en = euclidean_distance(query.data, start_node.data);
+            const auto dist_from_en = euclidean_distance(query, start_node.data);
 
             RefNodeMap candidate_map;
             candidate_map.emplace(dist_from_en, start_node);
@@ -111,7 +116,7 @@ namespace hnsw {
                     visited[neighbor.get().data.id] = true;
 
                     const auto dist_from_neighbor =
-                            euclidean_distance(query.data, neighbor.get().data);
+                            euclidean_distance(query, neighbor.get().data);
                     const auto furthest_result_ = --result_map.cend();
 
                     if (dist_from_neighbor < furthest_result_->first) {
@@ -131,11 +136,44 @@ namespace hnsw {
         }
 
         void insert(const Data<>& new_data) {
-            const auto new_node = Node(new_data);
-            const auto new_node_level = get_new_node_level();
+            const auto l_new_node = get_new_node_level();
 
-            if (new_node_level > layers.size() - 1)
-                layers.resize(new_node_level + 1);
+            Node* start_node = enter_node;
+            for (int l_c = layers.size() - 1; l_c > l_new_node; --l_c) {
+                start_node = search_layer(
+                        new_data, *start_node, 1)[0].get().lower_layer_node;
+            }
+
+            auto new_node_layer = new Node(new_data);
+            for (int l_c = min(l_new_node, (int)layers.size() - 1); l_c >= 0; --l_c) {
+                const auto knn_layer = search_layer(new_data, *start_node, m);
+                for (const auto& neighbor : knn_layer) {
+                    new_node_layer->neighbors.emplace_back(neighbor);
+
+                    auto& mutable_neighbor = const_off(neighbor.get());
+                    mutable_neighbor.neighbors.emplace_back(*new_node_layer);
+
+                    const auto m_max = [l_c, m = m, m_max_0 = m_max_0]() {
+                        if (l_c == 0) return m_max_0;
+                        else return m;
+                    }();
+
+                    if (mutable_neighbor.neighbors.size() > m_max) {
+                        const auto new_neighbor_neighbors = search_layer(
+                                mutable_neighbor.data, *start_node, m_max);
+                        mutable_neighbor.neighbors = new_neighbor_neighbors;
+                    }
+                }
+                layers[l_c].emplace_back(move(*new_node_layer));
+                new_node_layer = layers[l_c].back().lower_layer_node;
+                start_node = knn_layer[0].get().lower_layer_node;
+            }
+
+            if (l_new_node > layers.size() - 1) {
+                layers.resize(l_new_node + 1);
+                layers[l_new_node].emplace_back(new_data);
+                enter_node = &layers[l_new_node][0];
+            }
         }
     };
 }
