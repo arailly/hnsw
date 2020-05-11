@@ -46,3 +46,4 @@ TEST(hnsw, knn_search) {
         ++i;
     }
 }
+
