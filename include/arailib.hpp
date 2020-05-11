@@ -242,6 +242,25 @@ namespace arailib {
     bool is_csv(const string& path) {
         return (path.rfind(".csv", path.size()) < path.size());
     }
+
+    template <typename T>
+    auto scan_knn_search(const Data<T>& query, int k, const Series<T> dataset,
+                         string distance = "euclidean") {
+        const auto df = select_distance(distance);
+        map<float, reference_wrapper<const Data<T>>> result_map;
+        for (const auto& data : dataset) {
+            const auto dist = euclidean_distance(query, data);
+            result_map.emplace(dist, data);
+            if (result_map.size() > k) result_map.erase(--result_map.cend());
+        }
+
+        RefSeries<T> result;
+        for (const auto& result_pair : result_map) {
+            result.emplace_back(result_pair.second);
+        }
+
+        return result;
+    }
 }
 
 #endif //ARAILIB_ARAILIB_HPP

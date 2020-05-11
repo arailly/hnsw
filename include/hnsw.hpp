@@ -17,7 +17,6 @@ namespace hnsw {
     struct Node {
         const Data<>& data;
         vector<reference_wrapper<const Node>> neighbors;
-        Node* lower_layer_node;
 
         explicit Node(const Data<>& data_) : data(data_) {}
     };
@@ -74,6 +73,7 @@ namespace hnsw {
 
         Node* enter_node;
         vector<Layer> layers;
+        const Series<>* series;
 
         mt19937 engine;
         uniform_real_distribution<float> unif_dist;
@@ -136,23 +136,38 @@ namespace hnsw {
             return result;
         }
 
-        void insert(const Data<>& new_data) {
+        void insert(int new_data_id) {
+            const auto& new_data = (*series)[new_data_id];
             const auto l_new_node = get_new_node_level();
 
-            Node* start_node = enter_node;
-            for (int l_c = get_max_layer(); l_c > l_new_node; --l_c) {
-                start_node = search_layer(
-                        new_data, *start_node, 1)[0].get().lower_layer_node;
+            if (layers.empty() || l_new_node > get_max_layer()) {
+                // add new layer
+                int l_c = get_max_layer() + 1;
+                layers.resize(l_new_node + 1);
+                for (; l_c <= l_new_node; ++l_c) {
+                    for (const auto& data : *series) {
+                        layers[l_c].emplace_back(data);
+                    }
+                }
+                enter_node = &layers[l_new_node][new_data_id];
+            } else {
+                layers[l_new_node].emplace_back(new_data);
             }
 
-            auto new_node_layer = new Node(new_data);
-            for (int l_c = min(l_new_node, (int)get_max_layer()); l_c >= 0; --l_c) {
+            auto start_node = enter_node;
+            for (int l_c = get_max_layer(); l_c > l_new_node; --l_c) {
+                const auto nn_layer = search_layer(new_data, *start_node, 1)[0].get();
+                start_node = &layers[l_c - 1][nn_layer.data.id];
+            }
+
+            for (int l_c = l_new_node; l_c >= 0; --l_c) {
                 const auto knn_layer = search_layer(new_data, *start_node, m);
                 for (const auto& neighbor : knn_layer) {
-                    new_node_layer->neighbors.emplace_back(neighbor);
+                    if (neighbor.get().data == new_data) continue;
+                    layers[l_c][new_data_id].neighbors.emplace_back(neighbor.get());
 
                     auto& mutable_neighbor = const_off(neighbor.get());
-                    mutable_neighbor.neighbors.emplace_back(*new_node_layer);
+                    mutable_neighbor.neighbors.emplace_back(layers[l_c][new_data_id]);
 
                     const auto m_max = [l_c, m = m, m_max_0 = m_max_0]() {
                         if (l_c == 0) return m_max_0;
@@ -160,34 +175,37 @@ namespace hnsw {
                     }();
 
                     if (mutable_neighbor.neighbors.size() > m_max) {
-                        const auto new_neighbor_neighbors = search_layer(
-                                mutable_neighbor.data, *start_node, m_max);
-                        mutable_neighbor.neighbors = new_neighbor_neighbors;
+                        auto new_neighbor_knn = search_layer(
+                                mutable_neighbor.data, *start_node, m_max + 1);
+                        // first result is itself
+                        new_neighbor_knn.erase(new_neighbor_knn.begin());
+
+                        if (new_neighbor_knn.size() >= m_max)
+                            mutable_neighbor.neighbors = new_neighbor_knn;
+                        else
+                            mutable_neighbor.neighbors.erase(--mutable_neighbor.neighbors.cend());
                     }
                 }
-                layers[l_c].emplace_back(move(*new_node_layer));
-                new_node_layer = layers[l_c].back().lower_layer_node;
-                start_node = knn_layer[0].get().lower_layer_node;
+                if (l_c == 0) continue;
+                start_node = &layers[l_c - 1][knn_layer[0].get().data.id];
             }
-
-            if (l_new_node > get_max_layer()) {
-                layers.resize(l_new_node + 1);
-                layers[l_new_node].emplace_back(new_data);
-                enter_node = &layers[l_new_node][0];
+            if (new_data_id >= 72) {
+                int a = 8;
             }
         }
 
-        void build(const Series<>& series) {
-            for (const auto& data : series) insert(data);
+        void build(const Series<>& series_) {
+            series = &series_;
+            for (const auto& data : series_) insert(data.id);
         }
 
-        SearchResult knn_search(const Data<>& query, int k, int ef) const {
+        SearchResult knn_search(const Data<>& query, int k, int ef) {
             SearchResult result;
 
             auto start_node_layer = enter_node;
-            for (int i = get_max_layer(); i >= 1; --i) {
-                start_node_layer = search_layer(
-                        query, *start_node_layer, 1)[0].get().lower_layer_node;
+            for (int l_c = get_max_layer(); l_c >= 1; --l_c) {
+                const auto nn_layer = search_layer(query, *start_node_layer, 1)[0].get();
+                start_node_layer = &layers[l_c - 1][nn_layer.data.id];
             }
 
             const auto candidates = search_layer(query, *start_node_layer, ef);
