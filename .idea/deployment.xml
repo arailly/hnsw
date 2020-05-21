@@ -5,8 +5,8 @@
       <paths name="Remote (00520573-5a64-47d6-8a67-12345dd1c112)">
         <serverdata>
           <mappings>
-            <mapping deploy="/tmp/tmp.jpmGaWbYR8" local="$PROJECT_DIR$" />
-            <mapping deploy="/tmp/gdb/renderers" local="$APPLICATION_HOME_DIR$/bin/gdb/renderers" />
+            <mapping deploy="/tmp/tmp.6suAn38INB" local="$PROJECT_DIR$" />
+            <mapping deploy="/tmp/gdb/renderers" local="" />
           </mappings>
           <excludedPaths>
             <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-remote" />
