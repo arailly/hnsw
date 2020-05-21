@@ -10,6 +10,26 @@
 using namespace arailib;
 using namespace hnsw;
 
+auto calc_recall(const SearchResult& result,
+                 const RefSeries<>& gt) {
+    int k = result.result.size();
+    int n_acc = 0;
+
+    for (const auto& r : result.result) {
+        for (const auto& g : gt) {
+            if (r.second.get().id == g.get().id) ++n_acc;
+        }
+    }
+
+    return 1.0 * n_acc / (1.0 * k);
+}
+
+auto calc_mean(const vector<double>& v) {
+    double mean = 0;
+    for (const auto& e : v) mean += e;
+    return mean / v.size();
+}
+
 TEST(hnsw, get_new_node_level) {
     int m = 15;
     auto index = HNSW(m, m, m);
@@ -26,25 +46,26 @@ TEST(hnsw, get_new_node_level) {
 TEST(hnsw, knn_search) {
     const string data_path = "/home/arai/workspace/dataset/sift/data1m/",
         query_path = "/home/arai/workspace/dataset/sift/sift_query.csv";
-    const int n = 1000, n_query = 100;
+    const int n = 10, n_query = 100;
 
     const auto series = load_data(data_path, n);
     const auto queries = load_data(query_path, n_query);
 
-    int m = 10;
+    int m = 15;
     auto index = HNSW(m, m * 2, m);
     index.build(series);
 
-    int k = 5, ef = 10;
-    const auto result = index.knn_search(queries[0], k, ef);
-    ASSERT_EQ(result.result.size(), k);
-
-    const auto scan_result = scan_knn_search(queries[0], k, series);
-
-    int i = 0;
-    for (const auto& e : result.result) {
-        ASSERT_EQ(e.second.get(), scan_result[i].get());
-        ++i;
+    int k = 10, ef = 20;
+    vector<double> recalls(n_query);
+#pragma omp parallel for
+    for (int i = 0; i < n_query; i++) {
+        const auto& query = queries[i];
+        const auto result = index.knn_search(query, k, ef);
+        const auto scan_result = scan_knn_search(query, k, series);
+        const auto recall = calc_recall(result, scan_result);
+        recalls[i] = recall;
     }
+
+    cout << calc_mean(recalls) << endl;
 }
 
