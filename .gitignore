@@ -3,7 +3,6 @@
 
 test/lib/
 
-arailib.hpp
 json.hpp
 
 cmake-build-debug/

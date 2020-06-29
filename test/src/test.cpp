@@ -17,7 +17,7 @@ auto calc_recall(const SearchResult& result,
 
     for (const auto& r : result.result) {
         for (const auto& g : gt) {
-            if (r.second.get().id == g.get().id) ++n_acc;
+            if (r == g.get().id) ++n_acc;
         }
     }
 

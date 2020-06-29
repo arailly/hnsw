@@ -21,14 +21,12 @@ namespace hnsw {
         explicit Node(const Data<>& data_) : data(data_) {}
     };
 
-    using RefNodes = vector<reference_wrapper<const Node>>;
-    using RefNodeMap = map<float, reference_wrapper<const Node>>;
     using Layer = vector<Node>;
 
     struct SearchResult {
         time_t time = 0;
         unsigned int n_dist_calc = 0;
-        map<float, reference_wrapper<const Data<>>> result;
+        vector<int> result;
     };
 
     struct SearchResults {
@@ -42,7 +40,7 @@ namespace hnsw {
             log_ofs << line << endl;
 
             ofstream result_ofs(result_path);
-            line = "query_id,data_id,distance";
+            line = "query_id,data_id";
             result_ofs << line << endl;
 
             int query_id = 0;
@@ -50,10 +48,9 @@ namespace hnsw {
                 log_ofs << result.time << ","
                         << result.n_dist_calc << endl;
 
-                for (const auto& result_pair : result.result) {
+                for (const auto& data_id : result.result) {
                     result_ofs << query_id << ","
-                               << result_pair.second.get().id << ","
-                               << result_pair.first << endl;
+                               << data_id << endl;
                 }
 
                 query_id++;
@@ -74,7 +71,7 @@ namespace hnsw {
         int enter_node_id;
         vector<Layer> layers;
         map<int, vector<int>> layer_map;
-        const Series<>* series;
+        Dataset<> dataset;
 
         mt19937 engine;
         uniform_real_distribution<float> unif_dist;
@@ -210,7 +207,7 @@ namespace hnsw {
         }
 
         void insert(int new_data_id) {
-            const auto& new_data = (*series)[new_data_id];
+            const auto& new_data = dataset[new_data_id];
             const auto l_new_node = get_new_node_level();
 
             for (int l_c = l_new_node; l_c >= 0; --l_c)
@@ -221,7 +218,7 @@ namespace hnsw {
                 int l_c = get_max_layer() + 1;
                 layers.resize(l_new_node + 1);
                 for (; l_c <= l_new_node; ++l_c) {
-                    for (const auto& data : *series) {
+                    for (const auto& data : dataset) {
                         layers[l_c].emplace_back(data);
                     }
                 }
@@ -274,9 +271,9 @@ namespace hnsw {
             }
         }
 
-        void build(const Series<>& series_) {
-            series = &series_;
-            for (const auto& data : series_) insert(data.id);
+        void build(const Dataset<>& dataset_) {
+            dataset = dataset_;
+            for (const auto& data : dataset) insert(data.id);
         }
 
         SearchResult knn_search(const Data<>& query, int k, int ef) {
@@ -290,9 +287,8 @@ namespace hnsw {
 
             const auto candidates = search_layer(query, start_node_id_layer, ef, 0);
             for (const auto& candidate_id : candidates) {
-                const auto& candidate = (*series)[candidate_id];
-                const auto dist = euclidean_distance(query, candidate);
-                result.result.emplace(dist, candidate);
+                const auto& candidate = dataset[candidate_id];
+                result.result.emplace_back(candidate_id);
                 if (result.result.size() >= k) break;
             }
 
