@@ -64,7 +64,7 @@ namespace hnsw {
     }
 
     struct HNSW {
-        const int m, m_max_0, ef_construction;
+        const int m, m_max_0;
         const double m_l;
         const bool extend_candidates, keep_pruned_connections;
 
@@ -76,10 +76,8 @@ namespace hnsw {
         mt19937 engine;
         uniform_real_distribution<double> unif_dist;
 
-        HNSW(int m, int m_max_0, int ef_construction,
-             bool extend_candidates = true, bool keep_pruned_connections = true) :
-                m(m), m_max_0(m_max_0), ef_construction(ef_construction),
-                m_l(1 / log(1.0 * m)),
+        HNSW(int m, bool extend_candidates = true, bool keep_pruned_connections = true) :
+                m(m), m_max_0(m * 2), m_l(1 / log(1.0 * m)),
                 extend_candidates(extend_candidates),
                 keep_pruned_connections(keep_pruned_connections),
                 engine(42), unif_dist(0.0, 1.0) {}

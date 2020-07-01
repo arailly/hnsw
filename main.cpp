@@ -33,7 +33,7 @@ int main() {
     const auto queries = load_data(query_path, n_query);
 
     int m = 15;
-    auto index = HNSW(m, m * 2, m);
+    auto index = HNSW(m);
     index.build(series);
 
     int k = 10, ef = 20;
