@@ -46,7 +46,7 @@ TEST(hnsw, get_new_node_level) {
 TEST(hnsw, knn_search) {
     const string data_path = "/home/arai/workspace/dataset/sift/data1m.csv",
         query_path = "/home/arai/workspace/dataset/sift/sift_query.csv";
-    const int n = 100000, n_query = 100;
+    const int n = 1000, n_query = 100;
 
     const auto series = load_data(data_path, n);
     const auto queries = load_data(query_path, n_query);

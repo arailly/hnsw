@@ -4,30 +4,11 @@
 using namespace arailib;
 using namespace hnsw;
 
-auto calc_recall(const SearchResult& result,
-                 const vector<int>& gt) {
-    int k = result.result.size();
-    int n_acc = 0;
-
-    for (const auto& r : result.result) {
-        for (const auto& g : gt) {
-            if (r == g) ++n_acc;
-        }
-    }
-
-    return 1.0 * n_acc / (1.0 * k);
-}
-
-auto calc_mean(const vector<double>& v) {
-    double mean = 0;
-    for (const auto& e : v) mean += e;
-    return mean / v.size();
-}
-
 int main() {
-    const string data_path = "/home/arai/workspace/dataset/sift/data1m.csv",
-            query_path = "/home/arai/workspace/dataset/sift/sift_query.csv";
-    const int n = 10000, n_query = 100;
+    const string base_dir = "/home/arai/workspace/";
+    const string data_path = base_dir + "dataset/sift/data1m/",
+            query_path = base_dir + "dataset/sift/sift_query.csv";
+    const int n = 1, n_query = 10;
 
     const auto series = load_data(data_path, n);
     const auto queries = load_data(query_path, n_query);
@@ -37,15 +18,17 @@ int main() {
     index.build(series);
 
     int k = 10, ef = 20;
-    vector<double> recalls(n_query);
+    SearchResults results(n_query);
 #pragma omp parallel for
     for (int i = 0; i < n_query; i++) {
         const auto& query = queries[i];
         const auto result = index.knn_search(query, k, ef);
-        const auto scan_result = scan_knn_search(query, k, series);
-        const auto recall = calc_recall(result, scan_result);
-        recalls[i] = recall;
+        results[i] = result;
     }
 
-    cout << calc_mean(recalls) << endl;
+    const string save_name = "m15-ef20.csv";
+    const string result_base_dir = base_dir + "result/knn-search/hnsw/sift/data1m/k10/";
+    const string log_path = result_base_dir + "log-" + save_name;
+    const string result_path = result_base_dir + "result-" + save_name;
+    results.save(log_path, result_path);
 }
