@@ -255,9 +255,9 @@ namespace arailib {
             if (result_map.size() > k) result_map.erase(--result_map.cend());
         }
 
-        RefSeries<T> result;
+        vector<int> result;
         for (const auto& result_pair : result_map) {
-            result.emplace_back(result_pair.second);
+            result.emplace_back(result_pair.second.get().id);
         }
 
         return result;
