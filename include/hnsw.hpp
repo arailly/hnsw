@@ -191,8 +191,10 @@ namespace hnsw {
                 const auto candidate_itr = candidate_map.cbegin();
                 const auto dist_from_candidate = candidate_itr->first;
                 const auto candidate_id = candidate_itr->second;
-                const auto& candidate = layers[l_c][candidate_id];
                 candidate_map.erase(candidate_itr);
+
+                if (candidate_id == query.id) continue;
+                const auto& candidate = layers[l_c][candidate_id];
 
                 if (result_map.empty()) {
                     result_map.emplace(dist_from_candidate, candidate_id);
@@ -259,19 +261,11 @@ namespace hnsw {
                     layer[new_data.id].neighbors.emplace_back(neighbor_id);
                     neighbor.neighbors.emplace_back(new_data.id);
 
-                    const auto m_max = [l_c, m = m, m_max_0 = m_max_0]() {
-                        if (l_c == 0) return m_max_0;
-                        else return m;
-                    }();
+                    const auto m_max = l_c == 0 ? m_max_0 : m;
 
                     if (neighbor.neighbors.size() > m_max) {
                         auto new_neighbor_neighbors = select_neighbors_heuristic(
                                 neighbor.data, neighbor.neighbors, m_max + 1, l_c);
-
-                        // erase if first result is itself
-                        if (new_neighbor_neighbors.front() == neighbor_id)
-                            new_neighbor_neighbors.erase(new_neighbor_neighbors.begin());
-
                         neighbor.neighbors = new_neighbor_neighbors;
                     }
                 }

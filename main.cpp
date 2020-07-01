@@ -8,7 +8,7 @@ int main() {
     const string base_dir = "/home/arai/workspace/";
     const string data_path = base_dir + "dataset/sift/data1m/",
             query_path = base_dir + "dataset/sift/sift_query.csv";
-    const int n = 1, n_query = 10;
+    const int n = 1000, n_query = -1;
 
     const auto series = load_data(data_path, n);
     const auto queries = load_data(query_path, n_query);
