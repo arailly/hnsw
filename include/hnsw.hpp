@@ -300,20 +300,28 @@ namespace hnsw {
             cout << "complete: build" << endl;
         }
 
-        SearchResult knn_search(const Data<>& query, int k, int ef) {
+        auto knn_search(const Data<>& query, int k, int ef) {
             SearchResult result;
             const auto begin = get_now();
 
+            // search in upper layers
             auto start_id_layer = enter_node_id;
             for (int l_c = get_max_layer(); l_c >= 1; --l_c) {
-                const auto nn_id_layer = search_layer(
-                        query, start_id_layer, 1, l_c).result[0];
+                const auto result_layer = search_layer(
+                        query, start_id_layer, 1, l_c);
+
+                result.n_hop_upper_layer += result_layer.n_hop;
+                result.n_dist_calc_upper_layer += result_layer.n_dist_calc;
+
+                const auto& nn_id_layer = result_layer.result[0];
                 start_id_layer = nn_id_layer;
             }
 
             const auto& nn_upper_layer = layers[1][start_id_layer];
 
-            const auto candidates = search_layer(query, start_id_layer, ef, 0).result;
+            // search in base layer
+            const auto result_layer = search_layer(query, start_id_layer, ef, 0);
+            const auto candidates = result_layer.result;
             for (const auto& candidate_id : candidates) {
                 const auto& candidate = dataset[candidate_id];
                 result.result.emplace_back(candidate_id);
@@ -322,8 +330,13 @@ namespace hnsw {
 
             const auto end = get_now();
             result.time = get_duration(begin, end);
+
+            result.n_dist_calc_base_layer = result_layer.n_dist_calc;
             result.n_dist_calc = result.n_dist_calc_upper_layer + result.n_dist_calc_base_layer;
+
+            result.n_hop_base_layer = result_layer.n_hop;
             result.n_hop = result.n_hop_upper_layer + result.n_hop_base_layer;
+
             result.dist_from_ep_base_layer = euclidean_distance(query, nn_upper_layer.data);
 
             return result;
