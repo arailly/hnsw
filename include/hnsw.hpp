@@ -174,66 +174,71 @@ namespace hnsw {
 
         auto select_neighbors_heuristic(const Data<>& query, vector<int> initial_candidates,
                                         int n_neighbors, int l_c) {
-            map<double, int> result_map;
-            map<double, int> candidate_map;
+            priority_queue<Candidate, vector<Candidate>, CompLess> top_candidates;
+            priority_queue<Candidate, vector<Candidate>, CompGreater>
+                    candidates, discarded_candidates;
+
+            vector<bool> added(dataset.size());
+            added[query.id] = true;
 
             for (const auto& candidate_id : initial_candidates) {
-                const auto& candidate = layers[l_c][candidate_id];
+                if (added[candidate_id]) continue;
+                added[candidate_id] = true;
+
+                const auto& candidate_node = layers[l_c][candidate_id];
                 const auto dist_from_candidate =
-                        euclidean_distance(query, candidate.data);
-                candidate_map.emplace(dist_from_candidate, candidate_id);
+                        euclidean_distance(query, candidate_node.data);
+                candidates.emplace(dist_from_candidate, candidate_id);
             }
 
             if (extend_candidates) {
                 for (const auto& candidate_id : initial_candidates) {
+                    if (added[candidate_id]) continue;
+                    added[candidate_id] = true;
+
                     // candidate must be get like below (not to get ref of layers[l_c])
-                    const auto& candidate = layers[l_c][candidate_id];
-                    for (const auto& neighbor_id : candidate.neighbors) {
+                    const auto& candidate_node = layers[l_c][candidate_id];
+                    for (const auto& neighbor_id : candidate_node.neighbors) {
                         const auto& neighbor = layers[l_c][neighbor_id];
                         const auto dist_from_neighbor =
                                 euclidean_distance(query, neighbor.data);
-                        candidate_map.emplace(dist_from_neighbor, neighbor_id);
+                        candidates.emplace(dist_from_neighbor, neighbor_id);
                     }
                 }
             }
 
-            map<double, int> discarded_candidate_map;
-            while (!candidate_map.empty() && result_map.size() < m) {
-                const auto candidate_itr = candidate_map.cbegin();
-                const auto dist_from_candidate = candidate_itr->first;
-                const auto candidate_id = candidate_itr->second;
-                candidate_map.erase(candidate_itr);
+            while (!candidates.empty() && top_candidates.size() < m) {
+                const auto candidate = candidates.top();
+                candidates.pop();
 
-                if (candidate_id == query.id) continue;
-                const auto& candidate = layers[l_c][candidate_id];
+                const auto& candidate_node = layers[l_c][candidate.id];
 
-                if (result_map.empty()) {
-                    result_map.emplace(dist_from_candidate, candidate_id);
+                if (top_candidates.empty()) {
+                    top_candidates.emplace(candidate);
                     continue;
                 }
 
-                const auto furthest_result_itr = --result_map.cend();
-                const auto dist_from_furthest_result = furthest_result_itr->first;
-
-                if (dist_from_candidate < dist_from_furthest_result)
-                    result_map.emplace(dist_from_candidate, candidate_id);
+                if (candidate.dist < top_candidates.top().dist)
+                    top_candidates.emplace(candidate);
                 else
-                    discarded_candidate_map.emplace(dist_from_candidate, candidate_id);
+                    discarded_candidates.emplace(candidate);
             }
 
             if (keep_pruned_connections) {
-                while (!discarded_candidate_map.empty()
-                       && result_map.size() < n_neighbors) {
-                    const auto discarded_candidate_itr = discarded_candidate_map.cbegin();
-                    const auto discarded_candidate_pair = *discarded_candidate_itr;
-                    discarded_candidate_map.erase(discarded_candidate_itr);
-                    result_map.emplace(discarded_candidate_pair);
+                while (!discarded_candidates.empty()
+                       && top_candidates.size() < n_neighbors) {
+                    top_candidates.emplace(discarded_candidates.top());
+                    discarded_candidates.pop();
                 }
             }
 
             vector<int> result;
-            for (const auto& result_pair : result_map)
-                result.emplace_back(result_pair.second);
+            while (!top_candidates.empty()) {
+                result.emplace_back(top_candidates.top().id);
+                top_candidates.pop();
+            }
+            reverse(result.begin(), result.end());
+
             return result;
         }
 
