@@ -5,9 +5,7 @@
 #ifndef HNSW_HNSW_HPP
 #define HNSW_HNSW_HPP
 
-#include <cmath>
-#include <random>
-#include <map>
+#include <queue>
 #include <arailib.hpp>
 
 using namespace std;
@@ -74,8 +72,25 @@ namespace hnsw {
         }
     };
 
-    unsigned int in_dist_calc_counter = 0;
-    unsigned int in_hop_counter = 0;
+    struct Candidate {
+        double dist;
+        int id;
+
+        Candidate() : dist(-1), id(-1) {}
+        Candidate(double dist, int id) : dist(dist), id(id) {}
+    };
+
+    struct CompLess {
+        constexpr bool operator()(const Candidate& c1, const Candidate& c2) const noexcept {
+            return c1.dist < c2.dist;
+        }
+    };
+
+    struct CompGreater {
+        constexpr bool operator()(const Candidate& c1, const Candidate& c2) const noexcept {
+            return c1.dist > c2.dist;
+        }
+    };
 
     struct HNSW {
         const int m, m_max_0;
@@ -104,60 +119,56 @@ namespace hnsw {
             return static_cast<int>(-log(unif_dist(engine)) * m_l);
         }
 
-        auto search_layer(const Data<>& query, int start_node_id, int ef, int l_c,
-                          unsigned int& dist_calc_counter = in_dist_calc_counter,
-                          unsigned int& hop_counter = in_hop_counter) {
-            unordered_map<int, bool> visited;
+        auto search_layer(const Data<>& query, int start_node_id, int ef, int l_c) {
+            auto result = SearchResult();
+
+            vector<bool> visited(dataset.size());
             visited[start_node_id] = true;
+
+            priority_queue<Candidate, vector<Candidate>, CompGreater> candidates;
+            priority_queue<Candidate, vector<Candidate>, CompLess> top_candidates;
 
             const auto& start_node = layers[l_c][start_node_id];
             const auto dist_from_en = euclidean_distance(query, start_node.data);
 
-            map<double, int> candidate_map;
-            candidate_map.emplace(dist_from_en, start_node_id);
+            candidates.emplace(dist_from_en, start_node_id);
+            top_candidates.emplace(dist_from_en, start_node_id);
 
-            map<double, int> result_map;
-            result_map.emplace(dist_from_en, start_node_id);
+            while (!candidates.empty()) {
+                const auto nearest_candidate = candidates.top();
+                const auto& nearest_candidate_node = layers[l_c][nearest_candidate.id];
+                candidates.pop();
 
-            while (!candidate_map.empty()) {
-                const auto nearest_candidate_itr = candidate_map.cbegin();
-                const auto dist_from_nearest_candidate = nearest_candidate_itr->first;
-                const auto nearest_candidate_id = nearest_candidate_itr->second;
-                const auto& nearest_candidate = layers[l_c][nearest_candidate_id];
-                candidate_map.erase(nearest_candidate_itr);
+                if (nearest_candidate.dist > top_candidates.top().dist) break;
 
-                const auto furthest_result_itr = --result_map.cend();
-                const auto dist_from_furthest_result = furthest_result_itr->first;
+                ++result.n_hop;
 
-                if (dist_from_nearest_candidate > dist_from_furthest_result) break;
-
-                ++hop_counter;
-
-                for (const auto neighbor_id : nearest_candidate.neighbors) {
+                for (const auto neighbor_id : nearest_candidate_node.neighbors) {
                     if (visited[neighbor_id]) continue;
                     visited[neighbor_id] = true;
 
                     const auto& neighbor = layers[l_c][neighbor_id];
                     const auto dist_from_neighbor =
                             euclidean_distance(query, neighbor.data);
-                    ++dist_calc_counter;
-                    const auto furthest_result_itr_ = --result_map.cend();
-                    const auto dist_from_furthest_result_ = furthest_result_itr_->first;
+                    ++result.n_dist_calc;
 
-                    if (dist_from_neighbor < dist_from_furthest_result_ ||
-                        result_map.size() < ef) {
-                        candidate_map.emplace(dist_from_neighbor, neighbor_id);
-                        result_map.emplace(dist_from_neighbor, neighbor_id);
+                    if (dist_from_neighbor < top_candidates.top().dist ||
+                        top_candidates.size() < ef) {
+                        candidates.emplace(dist_from_neighbor, neighbor_id);
+                        top_candidates.emplace(dist_from_neighbor, neighbor_id);
 
-                        if (result_map.size() > ef)
-                            result_map.erase(furthest_result_itr_);
+                        if (top_candidates.size() > ef) top_candidates.pop();
                     }
                 }
             }
 
-            vector<int> result;
-            for (const auto& result_pair : result_map)
-                result.emplace_back(result_pair.second);
+            while (!top_candidates.empty()) {
+                result.result.emplace_back(top_candidates.top().id);
+                top_candidates.pop();
+            }
+
+            reverse(result.result.begin(), result.result.end());
+
             return result;
         }
 
@@ -246,12 +257,13 @@ namespace hnsw {
 
             auto start_node_id = enter_node_id;
             for (int l_c = get_max_layer(); l_c > l_new_node; --l_c) {
-                const auto nn_id_layer = search_layer(new_data, start_node_id, 1, l_c)[0];
+                const auto nn_id_layer = search_layer(
+                        new_data, start_node_id, 1, l_c).result[0];
                 start_node_id = nn_id_layer;
             }
 
             for (int l_c = l_new_node; l_c >= 0; --l_c) {
-                const auto neighbors = search_layer(new_data, start_node_id, m, l_c);
+                const auto neighbors = search_layer(new_data, start_node_id, m, l_c).result;
                 auto& layer = layers[l_c];
                 for (const auto neighbor_id : neighbors) {
                     if (neighbor_id == new_data.id) continue;
@@ -264,7 +276,7 @@ namespace hnsw {
                     const auto m_max = l_c == 0 ? m_max_0 : m;
 
                     if (neighbor.neighbors.size() > m_max) {
-                        auto new_neighbor_neighbors = select_neighbors_heuristic(
+                        const auto new_neighbor_neighbors = select_neighbors_heuristic(
                                 neighbor.data, neighbor.neighbors, m_max + 1, l_c);
                         neighbor.neighbors = new_neighbor_neighbors;
                     }
@@ -280,6 +292,7 @@ namespace hnsw {
         void build(const Dataset<>& dataset_) {
             dataset = dataset_;
             for (const auto& data : dataset) insert(data);
+            cout << "complete: build" << endl;
         }
 
         SearchResult knn_search(const Data<>& query, int k, int ef) {
@@ -288,17 +301,14 @@ namespace hnsw {
 
             auto start_id_layer = enter_node_id;
             for (int l_c = get_max_layer(); l_c >= 1; --l_c) {
-                const auto nn_id_layer = search_layer(query, start_id_layer, 1, l_c,
-                                                      result.n_dist_calc_upper_layer,
-                                                      result.n_hop_upper_layer)[0];
+                const auto nn_id_layer = search_layer(
+                        query, start_id_layer, 1, l_c).result[0];
                 start_id_layer = nn_id_layer;
             }
 
             const auto& nn_upper_layer = layers[1][start_id_layer];
 
-            const auto candidates = search_layer(query, start_id_layer, ef, 0,
-                                                 result.n_dist_calc_base_layer,
-                                                 result.n_hop_base_layer);
+            const auto candidates = search_layer(query, start_id_layer, ef, 0).result;
             for (const auto& candidate_id : candidates) {
                 const auto& candidate = dataset[candidate_id];
                 result.result.emplace_back(candidate_id);
