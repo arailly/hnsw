@@ -17,7 +17,7 @@ int main() {
     auto index = HNSW(m);
     index.build(series);
 
-    int k = 10, ef = 20;
+    int k = 10, ef = 15;
     SearchResults results(n_query);
 #pragma omp parallel for
     for (int i = 0; i < n_query; i++) {
@@ -26,7 +26,7 @@ int main() {
         results[i] = result;
     }
 
-    const string save_name = "m15-ef20.csv";
+    const string save_name = "m15-ef15.csv";
     const string result_base_dir = base_dir + "result/knn-search/hnsw/sift/data1m/k10/";
     const string log_path = result_base_dir + "log-" + save_name;
     const string result_path = result_base_dir + "result-" + save_name;

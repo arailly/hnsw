@@ -207,7 +207,7 @@ namespace hnsw {
                 }
             }
 
-            while (!candidates.empty() && top_candidates.size() < m) {
+            while (!candidates.empty() && top_candidates.size() < n_neighbors) {
                 const auto candidate = candidates.top();
                 candidates.pop();
 
@@ -282,7 +282,7 @@ namespace hnsw {
 
                     if (neighbor.neighbors.size() > m_max) {
                         const auto new_neighbor_neighbors = select_neighbors_heuristic(
-                                neighbor.data, neighbor.neighbors, m_max + 1, l_c);
+                                neighbor.data, neighbor.neighbors, m_max, l_c);
                         neighbor.neighbors = new_neighbor_neighbors;
                     }
                 }

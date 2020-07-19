@@ -55,7 +55,7 @@ TEST(hnsw, knn_search) {
     auto index = HNSW(m);
     index.build(series);
 
-    int k = 10, ef = 20;
+    int k = 10, ef = m;
     vector<double> recalls(n_query);
 #pragma omp parallel for
     for (int i = 0; i < n_query; i++) {
