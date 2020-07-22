@@ -13,20 +13,18 @@ int main() {
     const auto series = load_data(data_path, n);
     const auto queries = load_data(query_path, n_query);
 
-    int m = 15;
+    int m = 16;
     auto index = HNSW(m);
     index.build(series);
 
     int k = 10, ef = 15;
     SearchResults results(n_query);
-#pragma omp parallel for
     for (int i = 0; i < n_query; i++) {
         const auto& query = queries[i];
-        const auto result = index.knn_search(query, k, ef);
-        results[i] = result;
+        results[i] = index.knn_search(query, k, ef);
     }
 
-    const string save_name = "m15-ef15.csv";
+    const string save_name = "m16-ef15.csv";
     const string result_base_dir = base_dir + "result/knn-search/hnsw/sift/data1m/k10/";
     const string log_path = result_base_dir + "log-" + save_name;
     const string result_path = result_base_dir + "result-" + save_name;

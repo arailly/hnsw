@@ -93,7 +93,7 @@ namespace hnsw {
     };
 
     struct HNSW {
-        const int m, m_max_0;
+        const int m, m_max_0, ef_construction;
         const double m_l;
         const bool extend_candidates, keep_pruned_connections;
 
@@ -105,8 +105,10 @@ namespace hnsw {
         mt19937 engine;
         uniform_real_distribution<double> unif_dist;
 
-        HNSW(int m, bool extend_candidates = true, bool keep_pruned_connections = true) :
+        HNSW(int m, int ef_construction = 50,
+             bool extend_candidates = true, bool keep_pruned_connections = true) :
                 m(m), m_max_0(m * 2), m_l(1 / log(1.0 * m)),
+                ef_construction(ef_construction),
                 extend_candidates(extend_candidates),
                 keep_pruned_connections(keep_pruned_connections),
                 engine(42), unif_dist(0.0, 1.0) {}
@@ -268,7 +270,10 @@ namespace hnsw {
             }
 
             for (int l_c = l_new_node; l_c >= 0; --l_c) {
-                const auto neighbors = search_layer(new_data, start_node_id, m, l_c).result;
+                auto neighbors = search_layer(
+                        new_data, start_node_id, ef_construction, l_c).result;
+                if (neighbors.size() > m) neighbors.resize(m);
+
                 auto& layer = layers[l_c];
                 for (const auto neighbor_id : neighbors) {
                     if (neighbor_id == new_data.id) continue;
@@ -278,13 +283,13 @@ namespace hnsw {
                     layer[new_data.id].neighbors.emplace_back(neighbor_id);
                     neighbor.neighbors.emplace_back(new_data.id);
 
-                    const auto m_max = l_c == 0 ? m_max_0 : m;
-
-                    if (neighbor.neighbors.size() > m_max) {
-                        const auto new_neighbor_neighbors = select_neighbors_heuristic(
-                                neighbor.data, neighbor.neighbors, m_max, l_c);
-                        neighbor.neighbors = new_neighbor_neighbors;
-                    }
+//                    const auto m_max = l_c == 0 ? m_max_0 : m;
+//
+//                    if (neighbor.neighbors.size() > m_max) {
+//                        const auto new_neighbor_neighbors = select_neighbors_heuristic(
+//                                neighbor.data, neighbor.neighbors, m_max, l_c);
+//                        neighbor.neighbors = new_neighbor_neighbors;
+//                    }
                 }
                 if (l_c == 0) break;
                 start_node_id = neighbors[0];
