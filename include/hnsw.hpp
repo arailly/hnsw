@@ -105,7 +105,7 @@ namespace hnsw {
         mt19937 engine;
         uniform_real_distribution<double> unif_dist;
 
-        HNSW(int m, int ef_construction = 50,
+        HNSW(int m, int ef_construction = 200,
              bool extend_candidates = true, bool keep_pruned_connections = true) :
                 m(m), m_max_0(m * 2), m_l(1 / log(1.0 * m)),
                 ef_construction(ef_construction),
@@ -176,18 +176,19 @@ namespace hnsw {
 
         auto select_neighbors_heuristic(const Data<>& query, vector<int> initial_candidates,
                                         int n_neighbors, int l_c) {
-            priority_queue<Candidate, vector<Candidate>, CompLess> top_candidates;
+            const auto& layer = layers[l_c];
             priority_queue<Candidate, vector<Candidate>, CompGreater>
                     candidates, discarded_candidates;
 
             vector<bool> added(dataset.size());
             added[query.id] = true;
 
+            // init candidates
             for (const auto& candidate_id : initial_candidates) {
                 if (added[candidate_id]) continue;
                 added[candidate_id] = true;
 
-                const auto& candidate_node = layers[l_c][candidate_id];
+                const auto& candidate_node = layer[candidate_id];
                 const auto dist_from_candidate =
                         euclidean_distance(query, candidate_node.data);
                 candidates.emplace(dist_from_candidate, candidate_id);
@@ -199,9 +200,9 @@ namespace hnsw {
                     added[candidate_id] = true;
 
                     // candidate must be get like below (not to get ref of layers[l_c])
-                    const auto& candidate_node = layers[l_c][candidate_id];
+                    const auto& candidate_node = layer[candidate_id];
                     for (const auto& neighbor_id : candidate_node.neighbors) {
-                        const auto& neighbor = layers[l_c][neighbor_id];
+                        const auto& neighbor = layer[neighbor_id];
                         const auto dist_from_neighbor =
                                 euclidean_distance(query, neighbor.data);
                         candidates.emplace(dist_from_neighbor, neighbor_id);
@@ -209,38 +210,41 @@ namespace hnsw {
                 }
             }
 
-            while (!candidates.empty() && top_candidates.size() < n_neighbors) {
+            // init neighbors
+            vector<Candidate> neighbors;
+            neighbors.emplace_back(candidates.top());
+            candidates.pop();
+
+            // select edge
+            while (!candidates.empty() && neighbors.size() < n_neighbors) {
                 const auto candidate = candidates.top();
                 candidates.pop();
+                const auto& candidate_node = layer[candidate.id];
 
-                const auto& candidate_node = layers[l_c][candidate.id];
+                bool good = true;
+                for (const auto& neighbor : neighbors) {
+                    const auto& neighbor_node = layer[neighbor.id];
+                    const auto dist = euclidean_distance(candidate_node.data, neighbor_node.data);
 
-                if (top_candidates.empty()) {
-                    top_candidates.emplace(candidate);
-                    continue;
+                    if (dist < candidate.dist) {
+                        good = false;
+                        break;
+                    }
                 }
 
-                if (candidate.dist < top_candidates.top().dist)
-                    top_candidates.emplace(candidate);
-                else
-                    discarded_candidates.emplace(candidate);
+                if (good) neighbors.emplace_back(candidate);
+                else discarded_candidates.emplace(candidate);
             }
 
             if (keep_pruned_connections) {
-                while (!discarded_candidates.empty()
-                       && top_candidates.size() < n_neighbors) {
-                    top_candidates.emplace(discarded_candidates.top());
+                while (!discarded_candidates.empty() && neighbors.size() < n_neighbors) {
+                    neighbors.emplace_back(discarded_candidates.top());
                     discarded_candidates.pop();
                 }
             }
 
             vector<int> result;
-            while (!top_candidates.empty()) {
-                result.emplace_back(top_candidates.top().id);
-                top_candidates.pop();
-            }
-            reverse(result.begin(), result.end());
-
+            for (const auto& neighbor : neighbors) result.emplace_back(neighbor.id);
             return result;
         }
 
@@ -272,7 +276,8 @@ namespace hnsw {
             for (int l_c = l_new_node; l_c >= 0; --l_c) {
                 auto neighbors = search_layer(
                         new_data, start_node_id, ef_construction, l_c).result;
-                if (neighbors.size() > m) neighbors.resize(m);
+                if (neighbors.size() > m)
+                    neighbors = select_neighbors_heuristic(new_data, neighbors, m, l_c);
 
                 auto& layer = layers[l_c];
                 for (const auto neighbor_id : neighbors) {
@@ -283,13 +288,13 @@ namespace hnsw {
                     layer[new_data.id].neighbors.emplace_back(neighbor_id);
                     neighbor.neighbors.emplace_back(new_data.id);
 
-//                    const auto m_max = l_c == 0 ? m_max_0 : m;
-//
-//                    if (neighbor.neighbors.size() > m_max) {
-//                        const auto new_neighbor_neighbors = select_neighbors_heuristic(
-//                                neighbor.data, neighbor.neighbors, m_max, l_c);
-//                        neighbor.neighbors = new_neighbor_neighbors;
-//                    }
+                    const auto m_max = l_c ? m : m_max_0;
+
+                    if (neighbor.neighbors.size() > m_max) {
+                        const auto new_neighbor_neighbors = select_neighbors_heuristic(
+                                neighbor.data, neighbor.neighbors, m_max, l_c);
+                        neighbor.neighbors = new_neighbor_neighbors;
+                    }
                 }
                 if (l_c == 0) break;
                 start_node_id = neighbors[0];
