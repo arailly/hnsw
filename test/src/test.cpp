@@ -11,13 +11,13 @@ using namespace arailib;
 using namespace hnsw;
 
 auto calc_recall(const SearchResult& result,
-                 const vector<int>& gt) {
+                 const RefSeries<>& gt) {
     int k = result.result.size();
     int n_acc = 0;
 
     for (const auto& r : result.result) {
         for (const auto& g : gt) {
-            if (r == g) ++n_acc;
+            if (r.id == g.get().id) ++n_acc;
         }
     }
 

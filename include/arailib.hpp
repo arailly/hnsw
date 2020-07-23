@@ -255,13 +255,16 @@ namespace arailib {
             if (result_map.size() > k) result_map.erase(--result_map.cend());
         }
 
-        vector<int> result;
+        RefSeries<T> result;
         for (const auto& result_pair : result_map) {
-            result.emplace_back(result_pair.second.get().id);
+            result.emplace_back(result_pair.second);
         }
 
         return result;
     }
+
+    constexpr auto double_max = numeric_limits<double>::max();
+    constexpr auto double_min = numeric_limits<double>::min();
 }
 
 #endif //ARAILIB_ARAILIB_HPP
