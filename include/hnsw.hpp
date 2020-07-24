@@ -99,6 +99,7 @@ namespace hnsw {
         const bool extend_candidates, keep_pruned_connections;
 
         int enter_node_id;
+        int enter_node_level;
         vector<Layer> layers;
         map<int, vector<int>> layer_map;
         Dataset<> dataset;
@@ -109,12 +110,11 @@ namespace hnsw {
         HNSW(int m, int ef_construction = 200,
              bool extend_candidates = false, bool keep_pruned_connections = true) :
                 m(m), m_max_0(m * 2), m_l(1 / log(1.0 * m)),
+                enter_node_id(-1), enter_node_level(-1),
                 ef_construction(ef_construction),
                 extend_candidates(extend_candidates),
                 keep_pruned_connections(keep_pruned_connections),
                 engine(42), unif_dist(0.0, 1.0) {}
-
-        auto get_max_layer() const { return layers.size() - 1; }
 
         const Node& get_enter_node() const { return layers.back()[enter_node_id]; }
 
@@ -243,31 +243,18 @@ namespace hnsw {
         }
 
         void insert(const Data<>& new_data) {
-            bool changed_enter_node = false;
             auto l_new_node = get_new_node_level();
             for (int l_c = l_new_node; l_c >= 0; --l_c)
                 layer_map[l_c].emplace_back(new_data.id);
 
-            if (layers.empty() || l_new_node > get_max_layer()) {
-                // add new layer
-                int l_c = get_max_layer() + 1;
-                layers.resize(l_new_node + 1);
-                for (; l_c <= l_new_node; ++l_c) {
-                    for (const auto& data : dataset) {
-                        layers[l_c].emplace_back(data);
-                    }
-                }
-                changed_enter_node = true;
-            }
-
             auto start_node_id = enter_node_id;
-            for (int l_c = get_max_layer(); l_c > l_new_node; --l_c) {
+            for (int l_c = enter_node_level; l_c > l_new_node; --l_c) {
                 const auto nn_layer = search_layer(
                         new_data, start_node_id, 1, l_c).result[0];
                 start_node_id = nn_layer.id;
             }
 
-            for (int l_c = l_new_node; l_c >= 0; --l_c) {
+            for (int l_c = min(enter_node_level, l_new_node); l_c >= 0; --l_c) {
                 auto neighbors = search_layer(
                         new_data, start_node_id, ef_construction, l_c).result;
                 if (neighbors.size() > m)
@@ -294,8 +281,20 @@ namespace hnsw {
                 start_node_id = neighbors[0].id;
             }
 
-            if (changed_enter_node)
+            // if new node is top
+            if (layers.empty() || l_new_node > enter_node_level) {
+                // change enter node
                 enter_node_id = new_data.id;
+
+                // add new layer
+                layers.resize(l_new_node + 1);
+                for (int l_c = max(enter_node_level, 0); l_c <= l_new_node; ++l_c) {
+                    for (const auto& data : dataset) {
+                        layers[l_c].emplace_back(data);
+                    }
+                }
+                enter_node_level = l_new_node;
+            }
         }
 
         void build(const Dataset<>& dataset_) {
@@ -310,7 +309,7 @@ namespace hnsw {
 
             // search in upper layers
             auto start_id_layer = enter_node_id;
-            for (int l_c = get_max_layer(); l_c >= 1; --l_c) {
+            for (int l_c = enter_node_level; l_c >= 1; --l_c) {
                 const auto result_layer = search_layer(
                         query, start_id_layer, 1, l_c);
 
