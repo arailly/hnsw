@@ -12,29 +12,9 @@ using namespace std;
 using namespace arailib;
 
 namespace hnsw {
-    struct Neighbor {
-        double dist;
-        int id;
-
-        Neighbor() : dist(double_max), id(-1) {}
-        Neighbor(double dist, int id) : dist(dist), id(id) {}
-    };
-
-    struct CompLess {
-        constexpr bool operator()(const Neighbor& n1, const Neighbor& n2) const noexcept {
-            return n1.dist < n2.dist;
-        }
-    };
-
-    struct CompGreater {
-        constexpr bool operator()(const Neighbor& n1, const Neighbor& n2) const noexcept {
-            return n1.dist > n2.dist;
-        }
-    };
-
     struct Node {
         const Data<>& data;
-        vector<Neighbor> neighbors;
+        Neighbors neighbors;
 
         explicit Node(const Data<>& data_) : data(data_) {}
     };
@@ -42,7 +22,7 @@ namespace hnsw {
     using Layer = vector<Node>;
 
     struct SearchResult {
-        vector<Neighbor> result;
+        Neighbors result;
         time_t time = 0;
         unsigned int n_dist_calc = 0;
         unsigned int n_dist_calc_upper_layer = 0;
@@ -51,6 +31,7 @@ namespace hnsw {
         unsigned int n_hop_upper_layer = 0;
         unsigned int n_hop_base_layer = 0;
         double dist_from_ep_base_layer = 0;
+        double recall = 0;
     };
 
     struct SearchResults {
@@ -64,7 +45,8 @@ namespace hnsw {
         void save(const string& log_path, const string& result_path) {
             ofstream log_ofs(log_path);
             string line = "time,n_dist_calc,n_dist_calc_upper_layer,n_dist_calc_base_layer,"
-                          "n_hop,n_hop_upper_layer,n_hop_base_layer,dist_from_ep_base_layer";
+                          "n_hop,n_hop_upper_layer,n_hop_base_layer,dist_from_ep_base_layer,"
+                          "recall";
             log_ofs << line << endl;
 
             ofstream result_ofs(result_path);
@@ -80,7 +62,8 @@ namespace hnsw {
                         << result.n_hop << ","
                         << result.n_hop_upper_layer << ","
                         << result.n_hop_base_layer << ","
-                        << result.dist_from_ep_base_layer << endl;
+                        << result.dist_from_ep_base_layer << ","
+                        << result.recall << endl;
 
                 for (const auto& neighbor : result.result) {
                     result_ofs << query_id << ","
@@ -103,6 +86,7 @@ namespace hnsw {
         vector<Layer> layers;
         map<int, vector<int>> layer_map;
         Dataset<> dataset;
+        DistanceFunction<> calc_dist;
 
         mt19937 engine;
         uniform_real_distribution<double> unif_dist;
@@ -114,6 +98,7 @@ namespace hnsw {
                 ef_construction(ef_construction),
                 extend_candidates(extend_candidates),
                 keep_pruned_connections(keep_pruned_connections),
+                calc_dist(select_distance()),
                 engine(42), unif_dist(0.0, 1.0) {}
 
         const Node& get_enter_node() const { return layers.back()[enter_node_id]; }
@@ -132,7 +117,7 @@ namespace hnsw {
             priority_queue<Neighbor, vector<Neighbor>, CompLess> top_candidates;
 
             const auto& start_node = layers[l_c][start_node_id];
-            const auto dist_from_en = euclidean_distance(query, start_node.data);
+            const auto dist_from_en = calc_dist(query, start_node.data);
 
             candidates.emplace(dist_from_en, start_node_id);
             top_candidates.emplace(dist_from_en, start_node_id);
@@ -152,7 +137,7 @@ namespace hnsw {
 
                     const auto& neighbor_node = layers[l_c][neighbor.id];
                     const auto dist_from_neighbor =
-                            euclidean_distance(query, neighbor_node.data);
+                            calc_dist(query, neighbor_node.data);
                     ++result.n_dist_calc;
 
                     if (dist_from_neighbor < top_candidates.top().dist ||
@@ -200,7 +185,7 @@ namespace hnsw {
                     for (const auto& neighbor : candidate_node.neighbors) {
                         const auto& neighbor_node = layer[neighbor.id];
                         const auto dist_from_neighbor =
-                                euclidean_distance(query, neighbor_node.data);
+                                calc_dist(query, neighbor_node.data);
                         candidates.emplace(dist_from_neighbor, neighbor.id);
                     }
                 }
@@ -220,7 +205,7 @@ namespace hnsw {
                 bool good = true;
                 for (const auto& neighbor : neighbors) {
                     const auto& neighbor_node = layer[neighbor.id];
-                    const auto dist = euclidean_distance(candidate_node.data, neighbor_node.data);
+                    const auto dist = calc_dist(candidate_node.data, neighbor_node.data);
 
                     if (dist < candidate.dist) {
                         good = false;
@@ -339,7 +324,7 @@ namespace hnsw {
             result.n_hop_base_layer = result_layer.n_hop;
             result.n_hop = result.n_hop_upper_layer + result.n_hop_base_layer;
 
-            result.dist_from_ep_base_layer = euclidean_distance(query, nn_upper_layer.data);
+            result.dist_from_ep_base_layer = calc_dist(query, nn_upper_layer.data);
 
             return result;
         }

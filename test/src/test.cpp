@@ -62,8 +62,8 @@ TEST(hnsw, knn_search) {
         const auto& query = queries[i];
         const auto result = index.knn_search(query, k, ef);
         const auto scan_result = scan_knn_search(query, k, series);
-        const auto recall = calc_recall(result, scan_result);
-        recalls[i] = recall;
+//        const auto recall = calc_recall(result, scan_result);
+//        recalls[i] = recall;
     }
 
     cout << calc_mean(recalls) << endl;
