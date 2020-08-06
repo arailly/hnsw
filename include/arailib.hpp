@@ -410,6 +410,25 @@ namespace arailib {
         return recall;
     }
 
+    auto calc_recall(const Neighbors& actual, const Neighbors& expect, int k) {
+        float recall = 0;
+
+        for (int i = 0; i < k; ++i) {
+            const auto n1 = actual[i];
+            int match = 0;
+            for (int j = 0; j < k; ++j) {
+                const auto n2 = expect[j];
+                if (n1.id != n2.id) continue;
+                match = 1;
+                break;
+            }
+            recall += match;
+        }
+
+        recall /= actual.size();
+        return recall;
+    }
+
     auto load_neighbors(const string& neighbor_path, int n, bool skip_header = false) {
         ifstream ifs(neighbor_path);
         if (!ifs) throw runtime_error("Can't open file: " + neighbor_path);
