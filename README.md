@@ -26,7 +26,7 @@ int main() {
     const int ef = 15; // candidate set size
     const int m = 15; // degree
 
-    const auto queries = read_csv(query_path, n_query); // read query file
+    const auto queries = load_data(query_path, n_query); // read query file
 
     auto hnsw = HNSW(m); // init HNSW index
     const auto dataset = load_data(data_path, n); // load data
