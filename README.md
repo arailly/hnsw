@@ -19,7 +19,6 @@ using namespace hnsw;
 int main() {
     const string data_path = "path/to/data.csv";
     const string query_path = "path/to/query.csv";
-    const string save_path = "path/to/result.csv";
     const unsigned n = 1000; // data size
     const unsigned n_query = 1; // query size
     const int k = 10; // result size
